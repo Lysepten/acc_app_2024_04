@@ -3,11 +3,13 @@ package com.koreait.exam.acc_app_2024_04.app.order.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.koreait.exam.acc_app_2024_04.app.member.entity.Member;
+import com.koreait.exam.acc_app_2024_04.app.member.service.MemberService;
 import com.koreait.exam.acc_app_2024_04.app.order.entity.Order;
 import com.koreait.exam.acc_app_2024_04.app.order.exception.ActorCanNotSeeOrderException;
 import com.koreait.exam.acc_app_2024_04.app.order.exception.OrderIdNotMatchedException;
 import com.koreait.exam.acc_app_2024_04.app.order.service.OrderService;
 import com.koreait.exam.acc_app_2024_04.app.security.dto.MemberContext;
+import com.koreait.exam.acc_app_2024_04.util.Ut;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpResponse;
@@ -34,6 +36,7 @@ public class OrderController {
     private final OrderService orderService;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper;
+    private final MemberService memberService;
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
@@ -42,11 +45,14 @@ public class OrderController {
 
         Member actor = memberContext.getMember();
 
+        long restCash = memberService.getRestCash(actor);
+
         if (orderService.actorCanSee(actor, order) == false) {
             throw new ActorCanNotSeeOrderException();
         }
 
         model.addAttribute("order", order);
+        model.addAttribute("actorRestCash", restCash);
 
         return "order/detail";
     }
@@ -99,10 +105,13 @@ public class OrderController {
                 "https://api.tosspayments.com/v1/payments/" + paymentKey, request, JsonNode.class);
 
         if (responseEntity.getStatusCode() == HttpStatus.OK) {
-            JsonNode successNode = responseEntity.getBody();
-            model.addAttribute("orderId", successNode.get("orderId").asText());
-            String secret = successNode.get("secret").asText(); // 가상계좌의 경우 입금 callback 검증을 위해서 secret을 저장하기를 권장함
-            return "order/success";
+
+            orderService.payByTossPayments(order);
+
+//            JsonNode successNode = responseEntity.getBody();
+//            model.addAttribute("orderId", successNode.get("orderId").asText());
+//            String secret = successNode.get("secret").asText(); // 가상계좌의 경우 입금 callback 검증을 위해서 secret을 저장하기를 권장함
+            return "redirect:/order/%d?msg=%s".formatted(order.getId(), Ut.url.encode("결제가 완료되었습니다"));
         } else {
             JsonNode failNode = responseEntity.getBody();
             model.addAttribute("message", failNode.get("message").asText());
